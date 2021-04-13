@@ -1,3 +1,4 @@
+import re
 import os
 import sys
 import base64
@@ -17,7 +18,7 @@ xhtml_dir = os.path.join(output_dir, 'xhtml')
 def replace_math(new_text):
 
     # Number
-    new_text = new_text.replace('', '$0')
+    new_text = new_text.replace('', '$0')
     new_text = new_text.replace('', '$1')
     new_text = new_text.replace('', '$2')
     new_text = new_text.replace('', '$3')
@@ -28,13 +29,19 @@ def replace_math(new_text):
     new_text = new_text.replace('', '$8')
     new_text = new_text.replace('', '$9')
 
+    # TODO : 왜 여기 작동을 안하지????
+    new_text = re.sub(f'([a-zA-Z]){re.escape("$")}([0-9])', r'\1$_\2', new_text)
+
     # Alphabet
     new_text = new_text.replace('', 'a')
     new_text = new_text.replace('', 'b')
     new_text = new_text.replace('', 'c')
-    new_text = new_text.replace('', 's')
+    new_text = new_text.replace('', 'k')
     new_text = new_text.replace('', 'l')
+    new_text = new_text.replace('', 'n')
+    new_text = new_text.replace('', 'p')
     new_text = new_text.replace('', 'q')
+    new_text = new_text.replace('', 's')
     new_text = new_text.replace('', 'x')
     new_text = new_text.replace('', 'y')
     new_text = new_text.replace('', 'z')
@@ -42,6 +49,8 @@ def replace_math(new_text):
     # ETC    
     new_text = new_text.replace('', '$+')
     new_text = new_text.replace('', '$-')
+    new_text = new_text.replace('', '[')
+    new_text = new_text.replace('', ']')
     new_text = new_text.replace('', '(')
     new_text = new_text.replace('', ')')
     new_text = new_text.replace('', '=')
@@ -60,6 +69,25 @@ def replace_math(new_text):
     new_text = new_text.replace('신지호 화학 연구소', '')
 
     return new_text
+
+def change_text_to_html(original_text):
+    html_string = ""
+    is_box_exist = False
+    
+    lines = original_text.split('\n')
+    for line in lines:
+        if line == '':
+            continue
+        elif line == '<보 기>':
+            html_string += f'<p>$보기시작</p>\n'
+            is_box_exist = True
+            continue
+        elif 0 < line.count('①') and is_box_exist:
+            html_string += '<p>$보기끝</p>'
+            is_box_exist = False
+        html_string += f'<p>{line}</p>\n'
+
+    return html_string
 
 def parse_pdf():
 
@@ -82,39 +110,31 @@ def parse_pdf():
 
         # 모든 page 탐색
         pdf_text = ''
+        image_count_for_text = 1
+        image_count_for_png = 1
         for current_page in range(len(pdf_document)):
-            image_count = 0
 
             pdf_dict = pdf_document[current_page].getText('dict')
             
             for tmp in pdf_dict['blocks']:
                 if 'image' in tmp:
-                    pdf_text += f'[[page{current_page}-{image_count}.png]]'
-                    # print(f'[[page{current_page}-{image_count}.png]]')
-                    image_count += 1
+                    pdf_text += f'[[{image_count_for_text}.png]]'
+                    image_count_for_text += 1
                 else:
                     for tmp_2 in tmp['lines']:
                         for tmp_3 in tmp_2['spans']:
                             pdf_text += replace_math(tmp_3['text'])
-                            for char in tmp_3['text']:
-                                try:
-                                    char = replace_math(char)
-                                    print(char, end='')
-                                except:
-                                    print('$$', end='')
+
                         pdf_text += '\n'
-                        # print()
                 pdf_text += '\n'
-                # print('\n')
 
             # 현재 page의 모든 image 탐색
-            image_count = 0
             for image in pdf_document.getPageImageList(current_page):
                 xref = image[0]
                 pix = fitz.Pixmap(pdf_document, xref)
 
-                png_file_path = os.path.join(png_sub_dir, f'page{current_page}-{image_count}.png')
-                image_count += 1
+                png_file_path = os.path.join(png_sub_dir, f'{image_count_for_png}.png')
+                image_count_for_png += 1
 
                 if pix.n < 5:  # this is GRAY or RGB
                     pass
@@ -127,6 +147,7 @@ def parse_pdf():
                 # pix 초기화
                 pix = None
 
+        pdf_html = change_text_to_html(pdf_text)
+
         with open(text_file_path, 'w', encoding='utf-8') as out_file:
-            pdf_text = pdf_text
-            out_file.write(pdf_text)
+            out_file.write(pdf_html)
